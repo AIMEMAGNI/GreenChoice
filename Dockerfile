@@ -1,28 +1,25 @@
-# Use official Python 3.12.10 base image
+# Use Python 3.12.10 base image
 FROM python:3.12.10-slim
 
-# Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies required by scikit-learn
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    libjpeg-dev \
+    libgomp1 build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Copy the application code
+# Copy the rest of the code
 COPY . .
 
-# Expose the port used by uvicorn
+# Optional: expose for local Docker use
 EXPOSE 8000
 
-# Start the FastAPI server
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start command using Render’s dynamic port
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}"]
