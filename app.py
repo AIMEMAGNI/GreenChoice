@@ -1,16 +1,3 @@
-"""
-GreenChoice Image Prediction & Recommendation API
-================================================
-
-This FastAPI application exposes a **/predict** endpoint that accepts a JPG/PNG image
-and returns JSON containing:
-
-* **prediction** – values for every task your model predicts (single‑label and
-  multi‑label columns).
-* **greener_alternative** – the best matching product from the catalog with a
-  strictly better environmental score grade and at least one overlapping label
-  (or `null` if none is found).
-"""
 
 from __future__ import annotations
 
