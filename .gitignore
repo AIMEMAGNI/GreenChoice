@@ -1,0 +1,48 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment
+.env
+.venv/
+venv/
+ENV/
+env/
+
+# VS Code
+.vscode/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python-specific
+*.log
+*.pot
+*.pyc
+*.pyo
+
+# PyTorch model weights
+*.pt
+*.pth
+
+# Pickle files
+*.pkl
+
+# CSVs or large data files
+data/
+model/encoders.pkl
+model/best_model.pt
+
+# Uvicorn log files (if any)
+*.log
+
+# Localhost settings
+*.sqlite3
+
+# FastAPI auto-generated __pycache__
+**/__pycache__/
