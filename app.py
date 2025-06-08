@@ -10,38 +10,12 @@ and returns JSON containing:
 * **greener_alternative** – the best matching product from the catalog with a
   strictly better environmental score grade and at least one overlapping label
   (or `null` if none is found).
-
----
-Quick start
------------
-```bash
-# 1.  Install runtime deps (CUDA‑enabled PyTorch if you have a GPU)
-pip install fastapi uvicorn torch torchvision pandas pillow numpy
-
-# 2.  Project layout
-project/
-├── app.py                     # ← this file
-├── model/
-│   ├── best_model.pt
-│   └── encoders.pkl
-└── data/
-    └── df_filtered_unique_complete_qtygrams.csv
-
-# 3.  Launch the server
-uvicorn app:app --host 0.0.0.0 --port 8000 --reload
-
-# 4.  Open the interactive docs
-http://localhost:8000/docs
-```
-
-You can now `POST` an image file to `/predict` or test directly from the docs
-UI.  The response JSON contains everything you need for the front‑end / mobile
-client.
 """
 
 from __future__ import annotations
 
 import io
+import os
 import pickle
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -102,7 +76,6 @@ class _MultiTask(nn.Module):
         in_f = backbone.classifier[1].in_features  # type: ignore[index]
         backbone.classifier = nn.Identity()
         self.backbone = backbone
-        # One head per task
         self.heads = nn.ModuleDict(
             {k: _Head(in_f, n) for k, n in {**n_single, **n_multi}.items()}
         )
@@ -123,7 +96,6 @@ _MULTI_ENCODERS = enc["multi_encoders"]
 _SINGLE_LABEL_COLS: List[str] = enc["SINGLE_LABEL_COLS"]
 _MULTI_LABEL_COLS: List[str] = enc["MULTI_LABEL_COLS"]
 
-# Instantiate & weight the network
 _single_sizes = {c: len(_LABEL_ENCODERS[c].classes_) for c in _SINGLE_LABEL_COLS}
 _multi_sizes = {c: len(_MULTI_ENCODERS[c].classes_) for c in _MULTI_LABEL_COLS}
 
@@ -131,15 +103,11 @@ _MODEL = _MultiTask(_single_sizes, _multi_sizes).to(DEVICE)
 _MODEL.load_state_dict(torch.load(MODEL_DIR / "best_model.pt", map_location=DEVICE))
 _MODEL.eval()
 
-# Load catalog dataframe once
 _catalog = pd.read_csv(DATA_DIR / "df_filtered_unique_complete_qtygrams.csv")
-_catalog["environmental_score_grade"] = _catalog["environmental_score_grade"].apply(
-    _norm_grade
-)
+_catalog["environmental_score_grade"] = _catalog["environmental_score_grade"].apply(_norm_grade)
 _catalog = _catalog.dropna(subset=["environmental_score_grade", "main_category_en"])
 _catalog["env_rank"] = _catalog["environmental_score_grade"].map(_VALID_GRADES)
 
-# Pre‑compute transform
 _TRANSFORM = transforms.Compose(
     [
         transforms.Resize((IMG_SIZE, IMG_SIZE)),
@@ -153,20 +121,17 @@ _TRANSFORM = transforms.Compose(
 # ---------------------------------------------------------------------------
 
 def _decode_prediction(outs: Dict[str, torch.Tensor]) -> Dict[str, Any]:
-    """Convert raw network outputs to human‑readable labels."""
     pred: Dict[str, Any] = {}
 
-    # Single‑label tasks
     for col in _SINGLE_LABEL_COLS:
         idx = outs[col].argmax(1).item()
         pred[col] = _LABEL_ENCODERS[col].classes_[idx]
 
-    # Multi‑label tasks
     for col in _MULTI_LABEL_COLS:
         scores = outs[col].sigmoid().squeeze(0).cpu().numpy()
         mlb = _MULTI_ENCODERS[col]
         chosen = [cls for cls, s in zip(mlb.classes_, scores) if s > THRESHOLD]
-        pred[col] = chosen  # list (may be empty)
+        pred[col] = chosen
 
     return pred
 
@@ -177,7 +142,6 @@ def _predict_image(img_bytes: bytes) -> Dict[str, Any]:
     with torch.no_grad():
         outs = _MODEL(x)
     return _decode_prediction(outs)
-
 
 # ---------------------------------------------------------------------------
 # Greener‑alternative logic
@@ -196,7 +160,7 @@ def _recommend_alternative(pred: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     cur_labels = set(pred.get("labels_en", []))
 
     if not cat or not cur_grade:
-        return None  # missing info
+        return None
 
     cur_rank = _VALID_GRADES.get(cur_grade)
 
@@ -229,23 +193,19 @@ def _recommend_alternative(pred: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 app = FastAPI(title="GreenChoice Predictor", version="1.0.0")
 
-
 @app.get("/health")
 def health() -> Dict[str, str]:
-    """Simple health‑check endpoint."""
     return {"status": "ok"}
 
-
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):  # noqa: D401, ANN201
-    # Basic content‑type guard
+async def predict(file: UploadFile = File(...)):
     if file.content_type not in {"image/jpeg", "image/png", "image/jpg"}:
         raise HTTPException(status_code=415, detail="Unsupported file type.")
 
     img_bytes = await file.read()
     try:
         pred = _predict_image(img_bytes)
-    except Exception as e:  # pragma: no cover – broad except by design here
+    except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to process image: {e}")
 
     alt = _recommend_alternative(pred)
@@ -253,9 +213,9 @@ async def predict(file: UploadFile = File(...)):  # noqa: D401, ANN201
 
 
 # ---------------------------------------------------------------------------
-# CLI entry‑point (optional)
+# Run server (Render-compatible)
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)
