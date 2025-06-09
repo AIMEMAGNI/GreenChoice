@@ -1,6 +1,6 @@
 # 🌿 GreenChoice Product Advisor
 
-GreenChoice Product Advisor is a lightweight AI-powered tool built using Streamlit and FastAPI to identify the **packaging content** of food and household products from images. Designed for use in Kigali, Rwanda, it supports environmentally conscious shopping by analyzing packaging components and suggesting local alternatives with more considerate packaging. Users simply upload an image, and the app provides immediate insights based on visual packaging data.
+GreenChoice Product Advisor is an AI-powered tool built using Streamlit and FastAPI to identify the **packaging content** of food and household products from images. Designed for use in Kigali, Rwanda, it supports environmentally conscious shopping by analyzing packaging components and suggesting alternatives with more considerate packaging. Users simply upload an image, and the app provides immediate insights based on visual packaging data.
 
 
 Watch a quick demo ▶️ **[Demo Video](https://youtu.be/mHXSji4aah8)**
