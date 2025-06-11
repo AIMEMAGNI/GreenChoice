@@ -6,4 +6,4 @@ pillow==11.2.1
 torch==2.7.1
 torchvision==0.22.1
 uvicorn==0.34.3
-scikit-learn==1.6.1
+scikit-learn==1.2.2
