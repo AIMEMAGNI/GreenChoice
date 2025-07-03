@@ -5,7 +5,6 @@ import io
 import os
 import pickle
 import tempfile
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -18,9 +17,9 @@ from fastapi.responses import JSONResponse
 from PIL import Image, UnidentifiedImageError
 from torchvision import models, transforms
 
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Configuration
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_DIR = BASE_DIR / "model"
 DATA_DIR = BASE_DIR / "data"
@@ -28,9 +27,9 @@ IMG_SIZE = 224
 THRESHOLD = 0.3
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Environmental grade normalization
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 _VALID_GRADES = {
     "a-plus": 6,
     "a": 5,
@@ -48,9 +47,9 @@ def _norm_grade(grade: Any) -> Optional[str]:
     g = str(grade).strip().lower().replace("+", "plus").replace(" ", "-")
     return g if g in _VALID_GRADES else None
 
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Model Definition
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 
 class _Head(nn.Module):
@@ -77,9 +76,9 @@ class _MultiTask(nn.Module):
         feats = self.backbone(x)
         return {k: h(feats) for k, h in self.heads.items()}
 
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Load compressed encoders and model
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 
 def load_compressed_pickle(path: Path) -> Any:
@@ -102,17 +101,19 @@ _MULTI_ENCODERS = enc["multi_encoders"]
 _SINGLE_LABEL_COLS: List[str] = enc["SINGLE_LABEL_COLS"]
 _MULTI_LABEL_COLS: List[str] = enc["MULTI_LABEL_COLS"]
 
-# Load model
+# Define output sizes for single and multi label heads
 _single_sizes = {c: len(_LABEL_ENCODERS[c].classes_)
                  for c in _SINGLE_LABEL_COLS}
 _multi_sizes = {c: len(_MULTI_ENCODERS[c].classes_) for c in _MULTI_LABEL_COLS}
+
+# Instantiate model and load weights
 _MODEL = _MultiTask(_single_sizes, _multi_sizes).to(DEVICE)
 load_compressed_model(MODEL_DIR / "best_model.pt.gz", _MODEL)
 _MODEL.eval()
 
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Load compressed product catalog
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 _catalog = pd.read_csv(
     DATA_DIR / "df_filtered_unique_complete_qtygrams.csv.gz", compression="gzip")
 _catalog["environmental_score_grade"] = _catalog["environmental_score_grade"].apply(
@@ -121,18 +122,18 @@ _catalog = _catalog.dropna(
     subset=["environmental_score_grade", "main_category_en"])
 _catalog["env_rank"] = _catalog["environmental_score_grade"].map(_VALID_GRADES)
 
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Image transform
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 _TRANSFORM = transforms.Compose([
     transforms.Resize((IMG_SIZE, IMG_SIZE)),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
 ])
 
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Prediction helpers
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 
 def _decode_prediction(outs: Dict[str, torch.Tensor]) -> Dict[str, Any]:
@@ -203,15 +204,14 @@ def _recommend_alternative(pred: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # FastAPI app
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 app = FastAPI(title="GreenChoice Predictor", version="1.0.0")
 
-# Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change to frontend domain in production
+    allow_origins=["*"],  # Change to your frontend domain in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -238,7 +238,6 @@ async def predict(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Server error: {e}")
 
     return JSONResponse({"prediction": pred, "greener_alternative": alt})
-
 
 if __name__ == "__main__":
     import uvicorn
