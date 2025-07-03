@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import gzip
 import io
 import os
 import pickle
+import tempfile
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -25,9 +28,12 @@ IMG_SIZE = 224
 THRESHOLD = 0.3
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+<<<<<<< Updated upstream
 # ---------------------------------------------------------------------------
 # Grade normalization
 # ---------------------------------------------------------------------------
+=======
+>>>>>>> Stashed changes
 _VALID_GRADES = {
     "a-plus": 6,
     "a": 5,
@@ -45,8 +51,13 @@ def _norm_grade(grade: Any) -> Optional[str]:
     g = str(grade).strip().lower().replace("+", "plus").replace(" ", "-")
     return g if g in _VALID_GRADES else None
 
+
 # ---------------------------------------------------------------------------
+<<<<<<< Updated upstream
 # Model definition
+=======
+# Model Definition
+>>>>>>> Stashed changes
 # ---------------------------------------------------------------------------
 
 
@@ -63,32 +74,38 @@ class _MultiTask(nn.Module):
     def __init__(self, n_single: Dict[str, int], n_multi: Dict[str, int]):
         super().__init__()
         backbone = models.efficientnet_b0(weights=None)
-        in_f = backbone.classifier[1].in_features  # type: ignore[index]
+        in_f = backbone.classifier[1].in_features  # type: ignore
         backbone.classifier = nn.Identity()
         self.backbone = backbone
         self.heads = nn.ModuleDict(
             {k: _Head(in_f, n) for k, n in {**n_single, **n_multi}.items()}
         )
 
-    def forward(self, x):  # type: ignore[override]
+    def forward(self, x):
         feats = self.backbone(x)
         return {k: h(feats) for k, h in self.heads.items()}
 
 
 # ---------------------------------------------------------------------------
+<<<<<<< Updated upstream
 # Load model and data
+=======
+# Loaders for GZipped files
+>>>>>>> Stashed changes
 # ---------------------------------------------------------------------------
-with open(MODEL_DIR / "encoders.pkl", "rb") as f:
-    enc = pickle.load(f)
+def load_compressed_pickle(path: Path) -> Any:
+    with gzip.open(path, "rb") as f:
+        return pickle.load(f)
 
-_LABEL_ENCODERS = enc["label_encoders"]
-_MULTI_ENCODERS = enc["multi_encoders"]
-_SINGLE_LABEL_COLS: List[str] = enc["SINGLE_LABEL_COLS"]
-_MULTI_LABEL_COLS: List[str] = enc["MULTI_LABEL_COLS"]
 
-_single_sizes = {c: len(_LABEL_ENCODERS[c].classes_) for c in _SINGLE_LABEL_COLS}
-_multi_sizes = {c: len(_MULTI_ENCODERS[c].classes_) for c in _MULTI_LABEL_COLS}
+def load_compressed_model(model_path: Path, model: nn.Module) -> None:
+    with gzip.open(model_path, 'rb') as f_in:
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(f_in.read())
+            tmp_path = tmp.name
+    model.load_state_dict(torch.load(tmp_path, map_location=DEVICE))
 
+<<<<<<< Updated upstream
 _MODEL = _MultiTask(_single_sizes, _multi_sizes).to(DEVICE)
 _MODEL.load_state_dict(torch.load(MODEL_DIR / "best_model.pt", map_location=DEVICE))
 _MODEL.eval()
@@ -110,35 +127,88 @@ _TRANSFORM = transforms.Compose(
 
 # ---------------------------------------------------------------------------
 # Inference helpers
-# ---------------------------------------------------------------------------
+=======
 
+# ---------------------------------------------------------------------------
+# Lazy-loaded Singletons
+>>>>>>> Stashed changes
+# ---------------------------------------------------------------------------
+@lru_cache()
+def get_model_and_encoders():
+    enc = load_compressed_pickle(MODEL_DIR / "encoders.pkl.gz")
+
+<<<<<<< Updated upstream
 
 def _decode_prediction(outs: Dict[str, torch.Tensor]) -> Dict[str, Any]:
+=======
+    single_sizes = {c: len(enc["label_encoders"][c].classes_)
+                    for c in enc["SINGLE_LABEL_COLS"]}
+    multi_sizes = {c: len(enc["multi_encoders"][c].classes_)
+                   for c in enc["MULTI_LABEL_COLS"]}
+
+    model = _MultiTask(single_sizes, multi_sizes).to(DEVICE)
+    load_compressed_model(MODEL_DIR / "best_model.pt.gz", model)
+    model.eval()
+
+    return model, enc
+
+
+@lru_cache()
+def get_catalog() -> pd.DataFrame:
+    df = pd.read_csv(
+        DATA_DIR / "df_filtered_unique_complete_qtygrams.csv.gz", compression="gzip")
+    df["environmental_score_grade"] = df["environmental_score_grade"].apply(
+        _norm_grade)
+    df = df.dropna(subset=["environmental_score_grade", "main_category_en"])
+    df["env_rank"] = df["environmental_score_grade"].map(_VALID_GRADES)
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Image Transform
+# ---------------------------------------------------------------------------
+_TRANSFORM = transforms.Compose([
+    transforms.Resize((IMG_SIZE, IMG_SIZE)),
+    transforms.ToTensor(),
+    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+])
+
+
+# ---------------------------------------------------------------------------
+# Inference & Recommendation
+# ---------------------------------------------------------------------------
+def _decode_prediction(outs: Dict[str, torch.Tensor], enc: Dict) -> Dict[str, Any]:
+>>>>>>> Stashed changes
     pred: Dict[str, Any] = {}
 
-    for col in _SINGLE_LABEL_COLS:
+    for col in enc["SINGLE_LABEL_COLS"]:
         idx = outs[col].argmax(1).item()
-        pred[col] = _LABEL_ENCODERS[col].classes_[idx]
+        pred[col] = enc["label_encoders"][col].classes_[idx]
 
-    for col in _MULTI_LABEL_COLS:
+    for col in enc["MULTI_LABEL_COLS"]:
         scores = outs[col].sigmoid().squeeze(0).cpu().numpy()
-        mlb = _MULTI_ENCODERS[col]
-        chosen = [cls for cls, s in zip(mlb.classes_, scores) if s > THRESHOLD]
+        chosen = [cls for cls, s in zip(
+            enc["multi_encoders"][col].classes_, scores) if s > THRESHOLD]
         pred[col] = chosen
 
     return pred
 
 
 def _predict_image(img_bytes: bytes) -> Dict[str, Any]:
+<<<<<<< Updated upstream
     try:
         img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
     except UnidentifiedImageError:
         raise ValueError("Invalid image format or corrupted file.")
 
+=======
+    model, enc = get_model_and_encoders()
+    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+>>>>>>> Stashed changes
     x = _TRANSFORM(img).unsqueeze(0).to(DEVICE)
     with torch.no_grad():
-        outs = _MODEL(x)
-    return _decode_prediction(outs)
+        outs = model(x)
+    return _decode_prediction(outs, enc)
 
 
 def _labels_match(row_labels: str | float, cur_labels: set[str]) -> bool:
@@ -157,10 +227,19 @@ def _recommend_alternative(pred: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
 
     cur_rank = _VALID_GRADES.get(cur_grade)
+<<<<<<< Updated upstream
     candidates = _catalog[
         (_catalog["main_category_en"] == cat)
         & (_catalog["env_rank"] > cur_rank)
         & _catalog["labels_en"].apply(lambda x: _labels_match(x, cur_labels))
+=======
+    catalog = get_catalog()
+
+    candidates = catalog[
+        (catalog["main_category_en"] == cat)
+        & (catalog["env_rank"] > cur_rank)
+        & catalog["labels_en"].apply(lambda x: _labels_match(x, cur_labels))
+>>>>>>> Stashed changes
     ]
 
     if candidates.empty:
@@ -168,7 +247,7 @@ def _recommend_alternative(pred: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     best = candidates.sort_values(
         by=["env_rank", "nutriscore_grade", "quantity_in_grams"],
-        ascending=[False, True, True],
+        ascending=[False, True, True]
     ).iloc[0]
 
     return {
@@ -182,6 +261,7 @@ def _recommend_alternative(pred: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+<<<<<<< Updated upstream
 # FastAPI app setup
 # ---------------------------------------------------------------------------
 app = FastAPI(title="GreenChoice Predictor", version="1.0.0")
@@ -190,6 +270,16 @@ app = FastAPI(title="GreenChoice Predictor", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Change to specific domain(s) in production
+=======
+# FastAPI Setup
+# ---------------------------------------------------------------------------
+app = FastAPI(title="GreenChoice Predictor", version="1.0.0")
+
+# CORS Middleware (adjust origin for production)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+>>>>>>> Stashed changes
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -210,16 +300,26 @@ async def predict(file: UploadFile = File(...)):
         img_bytes = await file.read()
         pred = _predict_image(img_bytes)
         alt = _recommend_alternative(pred)
+<<<<<<< Updated upstream
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Server error: {e}")
+=======
+    except Exception as e:
+        raise HTTPException(
+            status_code=400, detail=f"Failed to process image: {e}")
+>>>>>>> Stashed changes
 
     return JSONResponse({"prediction": pred, "greener_alternative": alt})
 
 
 # ---------------------------------------------------------------------------
+<<<<<<< Updated upstream
 # Run server
+=======
+# Uvicorn Entry Point (for Render)
+>>>>>>> Stashed changes
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
