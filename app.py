@@ -1,18 +1,18 @@
-
 from __future__ import annotations
 
 import io
 import os
 import pickle
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import torch
 import torch.nn as nn
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from torchvision import models, transforms
 
 # ---------------------------------------------------------------------------
@@ -26,7 +26,7 @@ THRESHOLD = 0.3
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ---------------------------------------------------------------------------
-# Utility: environmental score normalisation & ranking
+# Grade normalization
 # ---------------------------------------------------------------------------
 _VALID_GRADES = {
     "a-plus": 6,
@@ -38,6 +38,7 @@ _VALID_GRADES = {
     "f": 0,
 }
 
+
 def _norm_grade(grade: Any) -> Optional[str]:
     if grade is None:
         return None
@@ -45,8 +46,10 @@ def _norm_grade(grade: Any) -> Optional[str]:
     return g if g in _VALID_GRADES else None
 
 # ---------------------------------------------------------------------------
-# Model definition (identical to notebook)
+# Model definition
 # ---------------------------------------------------------------------------
+
+
 class _Head(nn.Module):
     def __init__(self, in_f: int, out_f: int):
         super().__init__()
@@ -73,7 +76,7 @@ class _MultiTask(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# Single initialisation block – load *once* at start‑up
+# Load model and data
 # ---------------------------------------------------------------------------
 with open(MODEL_DIR / "encoders.pkl", "rb") as f:
     enc = pickle.load(f)
@@ -91,7 +94,9 @@ _MODEL.load_state_dict(torch.load(MODEL_DIR / "best_model.pt", map_location=DEVI
 _MODEL.eval()
 
 _catalog = pd.read_csv(DATA_DIR / "df_filtered_unique_complete_qtygrams.csv")
-_catalog["environmental_score_grade"] = _catalog["environmental_score_grade"].apply(_norm_grade)
+_catalog["environmental_score_grade"] = _catalog["environmental_score_grade"].apply(
+    _norm_grade
+)
 _catalog = _catalog.dropna(subset=["environmental_score_grade", "main_category_en"])
 _catalog["env_rank"] = _catalog["environmental_score_grade"].map(_VALID_GRADES)
 
@@ -104,8 +109,9 @@ _TRANSFORM = transforms.Compose(
 )
 
 # ---------------------------------------------------------------------------
-# Core inference helpers
+# Inference helpers
 # ---------------------------------------------------------------------------
+
 
 def _decode_prediction(outs: Dict[str, torch.Tensor]) -> Dict[str, Any]:
     pred: Dict[str, Any] = {}
@@ -124,15 +130,16 @@ def _decode_prediction(outs: Dict[str, torch.Tensor]) -> Dict[str, Any]:
 
 
 def _predict_image(img_bytes: bytes) -> Dict[str, Any]:
-    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+    try:
+        img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+    except UnidentifiedImageError:
+        raise ValueError("Invalid image format or corrupted file.")
+
     x = _TRANSFORM(img).unsqueeze(0).to(DEVICE)
     with torch.no_grad():
         outs = _MODEL(x)
     return _decode_prediction(outs)
 
-# ---------------------------------------------------------------------------
-# Greener‑alternative logic
-# ---------------------------------------------------------------------------
 
 def _labels_match(row_labels: str | float, cur_labels: set[str]) -> bool:
     if pd.isna(row_labels) or not str(row_labels).strip():
@@ -150,7 +157,6 @@ def _recommend_alternative(pred: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
 
     cur_rank = _VALID_GRADES.get(cur_grade)
-
     candidates = _catalog[
         (_catalog["main_category_en"] == cat)
         & (_catalog["env_rank"] > cur_rank)
@@ -176,33 +182,47 @@ def _recommend_alternative(pred: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# FastAPI application
+# FastAPI app setup
 # ---------------------------------------------------------------------------
 app = FastAPI(title="GreenChoice Predictor", version="1.0.0")
+
+# CORS: Allow all origins (or restrict as needed)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Change to specific domain(s) in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.get("/health")
 def health() -> Dict[str, str]:
     return {"status": "ok"}
+
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     if file.content_type not in {"image/jpeg", "image/png", "image/jpg"}:
         raise HTTPException(status_code=415, detail="Unsupported file type.")
 
-    img_bytes = await file.read()
     try:
+        img_bytes = await file.read()
         pred = _predict_image(img_bytes)
+        alt = _recommend_alternative(pred)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to process image: {e}")
+        raise HTTPException(status_code=500, detail=f"Server error: {e}")
 
-    alt = _recommend_alternative(pred)
     return JSONResponse({"prediction": pred, "greener_alternative": alt})
 
 
 # ---------------------------------------------------------------------------
-# Run server (Render-compatible)
+# Run server
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
+
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=os.environ.get("RELOAD") == "1")

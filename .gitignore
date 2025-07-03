@@ -3,28 +3,33 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Environment
+# Python virtual environments
 .env
 .venv/
 venv/
 ENV/
 env/
 
-# VS Code
-.vscode/
-
-# Jupyter Notebook checkpoints
+# Jupyter Notebook
 .ipynb_checkpoints/
 
-# OS
+# Editor settings
+.vscode/
+.idea/
+
+# System files
 .DS_Store
 Thumbs.db
 
-# Python-specific
+# Logs
 *.log
-*.pot
+
+# Compiled Python files
 *.pyc
 *.pyo
+
+# Translations
+*.pot
 
 # PyTorch model weights
 *.pt
@@ -33,16 +38,39 @@ Thumbs.db
 # Pickle files
 *.pkl
 
-# CSVs or large data files
+# Data and model folders
 data/
 model/encoders.pkl
 model/best_model.pt
 
-# Uvicorn log files (if any)
-*.log
-
-# Localhost settings
+# SQLite DBs
 *.sqlite3
 
-# FastAPI auto-generated __pycache__
+# Coverage/test/cache files
+.cache/
+coverage.*
+htmlcov/
+.tox/
+.pytest_cache/
+
+# FastAPI/Starlette cache
 **/__pycache__/
+
+# Docker
+*.pid
+*.tar
+*.bak
+*.swp
+
+# Mac/Linux user settings
+*.swp
+*.swo
+
+# Python build
+build/
+dist/
+*.egg-info/
+
+# Pip
+pip-log.txt
+pip-delete-this-directory.txt
