@@ -28,12 +28,9 @@ IMG_SIZE = 224
 THRESHOLD = 0.3
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-<<<<<<< Updated upstream
 # ---------------------------------------------------------------------------
 # Grade normalization
 # ---------------------------------------------------------------------------
-=======
->>>>>>> Stashed changes
 _VALID_GRADES = {
     "a-plus": 6,
     "a": 5,
@@ -53,11 +50,7 @@ def _norm_grade(grade: Any) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-<<<<<<< Updated upstream
 # Model definition
-=======
-# Model Definition
->>>>>>> Stashed changes
 # ---------------------------------------------------------------------------
 
 
@@ -87,11 +80,7 @@ class _MultiTask(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-<<<<<<< Updated upstream
 # Load model and data
-=======
-# Loaders for GZipped files
->>>>>>> Stashed changes
 # ---------------------------------------------------------------------------
 def load_compressed_pickle(path: Path) -> Any:
     with gzip.open(path, "rb") as f:
@@ -105,16 +94,18 @@ def load_compressed_model(model_path: Path, model: nn.Module) -> None:
             tmp_path = tmp.name
     model.load_state_dict(torch.load(tmp_path, map_location=DEVICE))
 
-<<<<<<< Updated upstream
+
 _MODEL = _MultiTask(_single_sizes, _multi_sizes).to(DEVICE)
-_MODEL.load_state_dict(torch.load(MODEL_DIR / "best_model.pt", map_location=DEVICE))
+_MODEL.load_state_dict(torch.load(
+    MODEL_DIR / "best_model.pt", map_location=DEVICE))
 _MODEL.eval()
 
 _catalog = pd.read_csv(DATA_DIR / "df_filtered_unique_complete_qtygrams.csv")
 _catalog["environmental_score_grade"] = _catalog["environmental_score_grade"].apply(
     _norm_grade
 )
-_catalog = _catalog.dropna(subset=["environmental_score_grade", "main_category_en"])
+_catalog = _catalog.dropna(
+    subset=["environmental_score_grade", "main_category_en"])
 _catalog["env_rank"] = _catalog["environmental_score_grade"].map(_VALID_GRADES)
 
 _TRANSFORM = transforms.Compose(
@@ -127,58 +118,15 @@ _TRANSFORM = transforms.Compose(
 
 # ---------------------------------------------------------------------------
 # Inference helpers
-=======
+# ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Lazy-loaded Singletons
->>>>>>> Stashed changes
-# ---------------------------------------------------------------------------
+
 @lru_cache()
 def get_model_and_encoders():
     enc = load_compressed_pickle(MODEL_DIR / "encoders.pkl.gz")
 
-<<<<<<< Updated upstream
 
 def _decode_prediction(outs: Dict[str, torch.Tensor]) -> Dict[str, Any]:
-=======
-    single_sizes = {c: len(enc["label_encoders"][c].classes_)
-                    for c in enc["SINGLE_LABEL_COLS"]}
-    multi_sizes = {c: len(enc["multi_encoders"][c].classes_)
-                   for c in enc["MULTI_LABEL_COLS"]}
-
-    model = _MultiTask(single_sizes, multi_sizes).to(DEVICE)
-    load_compressed_model(MODEL_DIR / "best_model.pt.gz", model)
-    model.eval()
-
-    return model, enc
-
-
-@lru_cache()
-def get_catalog() -> pd.DataFrame:
-    df = pd.read_csv(
-        DATA_DIR / "df_filtered_unique_complete_qtygrams.csv.gz", compression="gzip")
-    df["environmental_score_grade"] = df["environmental_score_grade"].apply(
-        _norm_grade)
-    df = df.dropna(subset=["environmental_score_grade", "main_category_en"])
-    df["env_rank"] = df["environmental_score_grade"].map(_VALID_GRADES)
-    return df
-
-
-# ---------------------------------------------------------------------------
-# Image Transform
-# ---------------------------------------------------------------------------
-_TRANSFORM = transforms.Compose([
-    transforms.Resize((IMG_SIZE, IMG_SIZE)),
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-])
-
-
-# ---------------------------------------------------------------------------
-# Inference & Recommendation
-# ---------------------------------------------------------------------------
-def _decode_prediction(outs: Dict[str, torch.Tensor], enc: Dict) -> Dict[str, Any]:
->>>>>>> Stashed changes
     pred: Dict[str, Any] = {}
 
     for col in enc["SINGLE_LABEL_COLS"]:
@@ -195,16 +143,11 @@ def _decode_prediction(outs: Dict[str, torch.Tensor], enc: Dict) -> Dict[str, An
 
 
 def _predict_image(img_bytes: bytes) -> Dict[str, Any]:
-<<<<<<< Updated upstream
     try:
         img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
     except UnidentifiedImageError:
         raise ValueError("Invalid image format or corrupted file.")
 
-=======
-    model, enc = get_model_and_encoders()
-    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
->>>>>>> Stashed changes
     x = _TRANSFORM(img).unsqueeze(0).to(DEVICE)
     with torch.no_grad():
         outs = model(x)
@@ -227,19 +170,10 @@ def _recommend_alternative(pred: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
 
     cur_rank = _VALID_GRADES.get(cur_grade)
-<<<<<<< Updated upstream
     candidates = _catalog[
         (_catalog["main_category_en"] == cat)
         & (_catalog["env_rank"] > cur_rank)
         & _catalog["labels_en"].apply(lambda x: _labels_match(x, cur_labels))
-=======
-    catalog = get_catalog()
-
-    candidates = catalog[
-        (catalog["main_category_en"] == cat)
-        & (catalog["env_rank"] > cur_rank)
-        & catalog["labels_en"].apply(lambda x: _labels_match(x, cur_labels))
->>>>>>> Stashed changes
     ]
 
     if candidates.empty:
@@ -261,7 +195,6 @@ def _recommend_alternative(pred: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-<<<<<<< Updated upstream
 # FastAPI app setup
 # ---------------------------------------------------------------------------
 app = FastAPI(title="GreenChoice Predictor", version="1.0.0")
@@ -270,16 +203,6 @@ app = FastAPI(title="GreenChoice Predictor", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Change to specific domain(s) in production
-=======
-# FastAPI Setup
-# ---------------------------------------------------------------------------
-app = FastAPI(title="GreenChoice Predictor", version="1.0.0")
-
-# CORS Middleware (adjust origin for production)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
->>>>>>> Stashed changes
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -300,29 +223,20 @@ async def predict(file: UploadFile = File(...)):
         img_bytes = await file.read()
         pred = _predict_image(img_bytes)
         alt = _recommend_alternative(pred)
-<<<<<<< Updated upstream
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Server error: {e}")
-=======
-    except Exception as e:
-        raise HTTPException(
-            status_code=400, detail=f"Failed to process image: {e}")
->>>>>>> Stashed changes
 
     return JSONResponse({"prediction": pred, "greener_alternative": alt})
 
 
 # ---------------------------------------------------------------------------
-<<<<<<< Updated upstream
 # Run server
-=======
-# Uvicorn Entry Point (for Render)
->>>>>>> Stashed changes
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
 
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=os.environ.get("RELOAD") == "1")
+    uvicorn.run("app:app", host="0.0.0.0", port=port,
+                reload=os.environ.get("RELOAD") == "1")
