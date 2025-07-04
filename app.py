@@ -238,8 +238,3 @@ async def predict(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Server error: {e}")
 
     return JSONResponse({"prediction": pred, "greener_alternative": alt})
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ["PORT"])
-    uvicorn.run("app:app", host="0.0.0.0", port=port)
