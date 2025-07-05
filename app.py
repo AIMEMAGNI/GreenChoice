@@ -4,18 +4,16 @@ import gzip
 import io
 import os
 import pickle
-import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import torch
-import torch.nn as nn
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image, UnidentifiedImageError
-from torchvision import models, transforms
+from torchvision import transforms
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -48,36 +46,7 @@ def _norm_grade(grade: Any) -> Optional[str]:
     return g if g in _VALID_GRADES else None
 
 # ---------------------------------------------------------------------------
-# Model Definition
-# ---------------------------------------------------------------------------
-
-
-class _Head(nn.Module):
-    def __init__(self, in_f: int, out_f: int):
-        super().__init__()
-        self.fc = nn.Linear(in_f, out_f)
-
-    def forward(self, x):
-        return self.fc(x)
-
-
-class _MultiTask(nn.Module):
-    def __init__(self, n_single: Dict[str, int], n_multi: Dict[str, int]):
-        super().__init__()
-        backbone = models.efficientnet_b0(weights=None)
-        in_f = backbone.classifier[1].in_features  # type: ignore
-        backbone.classifier = nn.Identity()
-        self.backbone = backbone
-        self.heads = nn.ModuleDict(
-            {k: _Head(in_f, n) for k, n in {**n_single, **n_multi}.items()}
-        )
-
-    def forward(self, x):
-        feats = self.backbone(x)
-        return {k: h(feats) for k, h in self.heads.items()}
-
-# ---------------------------------------------------------------------------
-# Load compressed encoders and model
+# Load compressed encoders
 # ---------------------------------------------------------------------------
 
 
@@ -86,29 +55,17 @@ def load_compressed_pickle(path: Path) -> Any:
         return pickle.load(f)
 
 
-def load_compressed_model(model_path: Path, model: nn.Module) -> None:
-    with gzip.open(model_path, 'rb') as f_in:
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            tmp.write(f_in.read())
-            tmp_path = tmp.name
-    model.load_state_dict(torch.load(tmp_path, map_location=DEVICE))
-
-
-# Load encoders
 enc = load_compressed_pickle(MODEL_DIR / "encoders.pkl.gz")
 _LABEL_ENCODERS = enc["label_encoders"]
 _MULTI_ENCODERS = enc["multi_encoders"]
 _SINGLE_LABEL_COLS: List[str] = enc["SINGLE_LABEL_COLS"]
 _MULTI_LABEL_COLS: List[str] = enc["MULTI_LABEL_COLS"]
 
-# Define output sizes for single and multi label heads
-_single_sizes = {c: len(_LABEL_ENCODERS[c].classes_)
-                 for c in _SINGLE_LABEL_COLS}
-_multi_sizes = {c: len(_MULTI_ENCODERS[c].classes_) for c in _MULTI_LABEL_COLS}
-
-# Instantiate model and load weights
-_MODEL = _MultiTask(_single_sizes, _multi_sizes).to(DEVICE)
-load_compressed_model(MODEL_DIR / "best_model.pt.gz", _MODEL)
+# ---------------------------------------------------------------------------
+# Load TorchScript Quantized Model
+# ---------------------------------------------------------------------------
+_MODEL = torch.jit.load(
+    MODEL_DIR / "model_quantized_scripted.pt", map_location=DEVICE)
 _MODEL.eval()
 
 # ---------------------------------------------------------------------------
@@ -157,6 +114,7 @@ def _predict_image(img_bytes: bytes) -> Dict[str, Any]:
         img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
     except UnidentifiedImageError:
         raise ValueError("Invalid image format or corrupted file.")
+
     x = _TRANSFORM(img).unsqueeze(0).to(DEVICE)
     with torch.no_grad():
         outs = _MODEL(x)
@@ -179,7 +137,6 @@ def _recommend_alternative(pred: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
 
     cur_rank = _VALID_GRADES.get(cur_grade)
-
     candidates = _catalog[
         (_catalog["main_category_en"] == cat)
         & (_catalog["env_rank"] > cur_rank)
@@ -205,13 +162,13 @@ def _recommend_alternative(pred: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# FastAPI app
+# FastAPI App
 # ---------------------------------------------------------------------------
 app = FastAPI(title="GreenChoice Predictor", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change to your frontend domain in production
+    allow_origins=["*"],  # Change in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
