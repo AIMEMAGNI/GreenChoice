@@ -31,17 +31,10 @@ Thumbs.db
 # Translations
 *.pot
 
-# PyTorch model weights
-*.pt
-*.pth
 
 # Pickle files
 *.pkl
 
-# Data and model folders
-data/
-model/encoders.pkl
-model/best_model.pt
 
 # SQLite DBs
 *.sqlite3
