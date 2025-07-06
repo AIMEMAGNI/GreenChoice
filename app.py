@@ -178,7 +178,7 @@ async def startup_event():
 def health() -> Dict[str, str]:
     return {"status": "ok"}
 
-@app.get("/get")
+@app.get("/")
 def get_message() -> Dict[str, str]:
     return {"message": "Welcome to the GreenChoice Predictor API! Use POST /predict to send your image for prediction."}
 
